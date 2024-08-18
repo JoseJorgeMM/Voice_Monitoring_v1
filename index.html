@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de Palabras en Español</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        #micIcon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .pulse {
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        #alert {
+            display: none;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        #keywords {
+            margin-top: 20px;
+            padding: 5px;
+            width: 300px;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .toggleBtn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        .toggleBtn.disabled {
+            background-color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="micIcon">🎤</div>
+        <button id="startBtn">Iniciar grabación en vivo</button>
+        <button id="stopBtn">Detener grabación</button>
+        <div>
+            <input type="text" id="keywords" placeholder="Palabras clave a detectar (separadas por comas)">
+        </div>
+        <button id="counterToggle" class="toggleBtn">Contador: Activado</button>
+        <button id="alertToggle" class="toggleBtn">Alerta: Activada</button>
+        <div id="counter">Detecciones: 0</div>
+        <div id="alert">
+            ¡Palabra detectada!
+            <button id="acceptBtn">Aceptar</button>
+        </div>
+    </div>
+
+    <script>
+        const micIcon = document.getElementById('micIcon');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const keywordsInput = document.getElementById('keywords');
+        const alertDiv = document.getElementById('alert');
+        const acceptBtn = document.getElementById('acceptBtn');
+        const counterDiv = document.getElementById('counter');
+        const counterToggle = document.getElementById('counterToggle');
+        const alertToggle = document.getElementById('alertToggle');
+
+        let recognition;
+        let isListening = false;
+        let detectionCount = 0;
+        let isCounterEnabled = true;
+        let isAlertEnabled = true;
+
+        // Create audio context and beep sound
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        function beep() {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // 440 Hz
+            gainNode.gain.setValueAtTime(1, audioContext.currentTime);
+            oscillator.start();
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
+            oscillator.stop(audioContext.currentTime + 0.5);
+        }
+
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'es-ES';
+
+            recognition.onstart = function() {
+                isListening = true;
+                micIcon.classList.add('pulse');
+            };
+
+            recognition.onend = function() {
+                if (isListening) {
+                    recognition.start();
+                } else {
+                    micIcon.classList.remove('pulse');
+                }
+            };
+
+            recognition.onresult = function(event) {
+                const keywords = keywordsInput.value.toLowerCase().split(',').map(keyword => keyword.trim());
+                if (keywords.length === 0) return;
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript.toLowerCase();
+                    keywords.forEach(keyword => {
+                        if (transcript.includes(keyword)) {
+                            if (isCounterEnabled) {
+                                detectionCount++;
+                                counterDiv.textContent = `Detecciones: ${detectionCount}`;
+                            }
+                            if (isAlertEnabled) {
+                                alertDiv.style.display = 'block';
+                            }
+                            beep();
+                        }
+                    });
+                }
+            };
+
+            startBtn.onclick = function() {
+                detectionCount = 0;
+                counterDiv.textContent = `Detecciones: ${detectionCount}`;
+                isListening = true;
+                recognition.start();
+            };
+
+            stopBtn.onclick = function() {
+                isListening = false;
+                recognition.stop();
+            };
+
+            acceptBtn.onclick = function() {
+                alertDiv.style.display = 'none';
+            };
+
+            counterToggle.onclick = function() {
+                isCounterEnabled = !isCounterEnabled;
+                counterToggle.textContent = isCounterEnabled ? "Contador: Activado" : "Contador: Desactivado";
+                counterToggle.classList.toggle('disabled', !isCounterEnabled);
+                if (!isCounterEnabled) {
+                    detectionCount = 0;
+                    counterDiv.textContent = `Detecciones: ${detectionCount}`;
+                }
+            };
+
+            alertToggle.onclick = function() {
+                isAlertEnabled = !isAlertEnabled;
+                alertToggle.textContent = isAlertEnabled ? "Alerta: Activada" : "Alerta: Desactivada";
+                alertToggle.classList.toggle('disabled', !isAlertEnabled);
+                if (!isAlertEnabled) {
+                    alertDiv.style.display = 'none';
+                }
+            };
+        } else {
+            alert('Web Speech API no es compatible con este navegador.');
+        }
+    </script>
+</body>
+</html>
