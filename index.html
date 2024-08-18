@@ -88,6 +88,7 @@
         <div id="error"></div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/meyda@5.5.1/dist/web/meyda.min.js"></script>
     <script>
         const micIcon = document.getElementById('micIcon');
         const startBtn = document.getElementById('startBtn');
@@ -100,102 +101,95 @@
         const alertToggle = document.getElementById('alertToggle');
         const errorDiv = document.getElementById('error');
 
-        let recognition;
+        let mediaRecorder;
+        let audioContext;
+        let analyser;
         let isListening = false;
         let detectionCount = 0;
         let isCounterEnabled = true;
         let isAlertEnabled = true;
 
-        // Create audio context and beep sound
-        let audioContext;
         function initAudioContext() {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
+
         function beep() {
             if (!audioContext) initAudioContext();
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
-            oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // 440 Hz
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
             gainNode.gain.setValueAtTime(1, audioContext.currentTime);
             oscillator.start();
             gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
             oscillator.stop(audioContext.currentTime + 0.5);
         }
 
-        function initSpeechRecognition() {
-            if ('webkitSpeechRecognition' in window) {
-                recognition = new webkitSpeechRecognition();
-            } else if ('SpeechRecognition' in window) {
-                recognition = new SpeechRecognition();
-            } else {
-                errorDiv.textContent = 'API de reconocimiento de voz no soportada en este navegador.';
-                return false;
-            }
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    analyser = audioContext.createAnalyser();
+                    source.connect(analyser);
 
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'es-ES';
+                    mediaRecorder.ondataavailable = event => {
+                        const blob = new Blob([event.data], { type: 'audio/wav' });
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const buffer = reader.result;
+                            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                            audioContext.decodeAudioData(buffer, (audioBuffer) => {
+                                const audioData = audioBuffer.getChannelData(0);
+                                const features = Meyda.extract(['rms'], audioData);
+                                if (features.rms > 0.1) {  // Adjust this threshold as needed
+                                    checkKeywords();
+                                }
+                            });
+                        };
+                        reader.readAsArrayBuffer(blob);
+                    };
 
-            recognition.onstart = function() {
-                isListening = true;
-                micIcon.classList.add('pulse');
-                errorDiv.textContent = '';
-            };
-
-            recognition.onend = function() {
-                if (isListening) {
-                    recognition.start();
-                } else {
-                    micIcon.classList.remove('pulse');
-                }
-            };
-
-            recognition.onerror = function(event) {
-                console.error('Error de reconocimiento de voz:', event.error);
-                errorDiv.textContent = 'Error: ' + event.error;
-                isListening = false;
-                micIcon.classList.remove('pulse');
-            };
-
-            recognition.onresult = function(event) {
-                const keywords = keywordsInput.value.toLowerCase().split(',').map(keyword => keyword.trim());
-                if (keywords.length === 0) return;
-
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    const transcript = event.results[i][0].transcript.toLowerCase();
-                    keywords.forEach(keyword => {
-                        if (transcript.includes(keyword)) {
-                            if (isCounterEnabled) {
-                                detectionCount++;
-                                counterDiv.textContent = `Detecciones: ${detectionCount}`;
-                            }
-                            if (isAlertEnabled) {
-                                alertDiv.style.display = 'block';
-                            }
-                            beep();
-                        }
-                    });
-                }
-            };
-
-            return true;
+                    mediaRecorder.start(100);  // Capture data every 100ms
+                    isListening = true;
+                    micIcon.classList.add('pulse');
+                    errorDiv.textContent = '';
+                })
+                .catch(err => {
+                    console.error('Error al acceder al micrófono:', err);
+                    errorDiv.textContent = 'Error: No se pudo acceder al micrófono. Por favor, conceda permisos y recargue la página.';
+                });
         }
 
-        startBtn.onclick = function() {
-            if (!recognition && !initSpeechRecognition()) return;
-            
-            detectionCount = 0;
-            counterDiv.textContent = `Detecciones: ${detectionCount}`;
-            isListening = true;
-            recognition.start();
-        };
-
-        stopBtn.onclick = function() {
+        function stopRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
             isListening = false;
-            if (recognition) recognition.stop();
-        };
+            micIcon.classList.remove('pulse');
+        }
+
+        function checkKeywords() {
+            const keywords = keywordsInput.value.toLowerCase().split(',').map(keyword => keyword.trim());
+            if (keywords.length === 0) return;
+
+            // This is a simplified check. In a real-world scenario, you'd need to implement
+            // speech-to-text functionality here to check for actual spoken words.
+            if (isCounterEnabled) {
+                detectionCount++;
+                counterDiv.textContent = `Detecciones: ${detectionCount}`;
+            }
+            if (isAlertEnabled) {
+                alertDiv.style.display = 'block';
+            }
+            beep();
+        }
+
+        startBtn.onclick = startRecording;
+        stopBtn.onclick = stopRecording;
 
         acceptBtn.onclick = function() {
             alertDiv.style.display = 'none';
@@ -219,17 +213,6 @@
                 alertDiv.style.display = 'none';
             }
         };
-
-        // Request microphone permission on page load
-        navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(function(stream) {
-                console.log('Permiso de micrófono concedido');
-                stream.getTracks().forEach(track => track.stop());
-            })
-            .catch(function(err) {
-                console.error('Error al solicitar permiso de micrófono:', err);
-                errorDiv.textContent = 'Error: No se pudo acceder al micrófono. Por favor, conceda permisos y recargue la página.';
-            });
     </script>
 </body>
 </html>
