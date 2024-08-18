@@ -10,7 +10,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             background-color: #f0f0f0;
         }
@@ -20,6 +20,8 @@
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 90%;
+            width: 400px;
         }
         #micIcon {
             font-size: 48px;
@@ -44,7 +46,8 @@
         #keywords {
             margin-top: 20px;
             padding: 5px;
-            width: 300px;
+            width: 90%;
+            max-width: 300px;
         }
         button {
             margin: 10px;
@@ -60,6 +63,10 @@
         }
         .toggleBtn.disabled {
             background-color: #ccc;
+        }
+        #error {
+            color: red;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -78,6 +85,7 @@
             ¡Palabra detectada!
             <button id="acceptBtn">Aceptar</button>
         </div>
+        <div id="error"></div>
     </div>
 
     <script>
@@ -90,6 +98,7 @@
         const counterDiv = document.getElementById('counter');
         const counterToggle = document.getElementById('counterToggle');
         const alertToggle = document.getElementById('alertToggle');
+        const errorDiv = document.getElementById('error');
 
         let recognition;
         let isListening = false;
@@ -98,8 +107,12 @@
         let isAlertEnabled = true;
 
         // Create audio context and beep sound
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let audioContext;
+        function initAudioContext() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
         function beep() {
+            if (!audioContext) initAudioContext();
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
             oscillator.connect(gainNode);
@@ -111,8 +124,16 @@
             oscillator.stop(audioContext.currentTime + 0.5);
         }
 
-        if ('webkitSpeechRecognition' in window) {
-            recognition = new webkitSpeechRecognition();
+        function initSpeechRecognition() {
+            if ('webkitSpeechRecognition' in window) {
+                recognition = new webkitSpeechRecognition();
+            } else if ('SpeechRecognition' in window) {
+                recognition = new SpeechRecognition();
+            } else {
+                errorDiv.textContent = 'API de reconocimiento de voz no soportada en este navegador.';
+                return false;
+            }
+
             recognition.continuous = true;
             recognition.interimResults = true;
             recognition.lang = 'es-ES';
@@ -120,6 +141,7 @@
             recognition.onstart = function() {
                 isListening = true;
                 micIcon.classList.add('pulse');
+                errorDiv.textContent = '';
             };
 
             recognition.onend = function() {
@@ -128,6 +150,13 @@
                 } else {
                     micIcon.classList.remove('pulse');
                 }
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Error de reconocimiento de voz:', event.error);
+                errorDiv.textContent = 'Error: ' + event.error;
+                isListening = false;
+                micIcon.classList.remove('pulse');
             };
 
             recognition.onresult = function(event) {
@@ -151,43 +180,56 @@
                 }
             };
 
-            startBtn.onclick = function() {
+            return true;
+        }
+
+        startBtn.onclick = function() {
+            if (!recognition && !initSpeechRecognition()) return;
+            
+            detectionCount = 0;
+            counterDiv.textContent = `Detecciones: ${detectionCount}`;
+            isListening = true;
+            recognition.start();
+        };
+
+        stopBtn.onclick = function() {
+            isListening = false;
+            if (recognition) recognition.stop();
+        };
+
+        acceptBtn.onclick = function() {
+            alertDiv.style.display = 'none';
+        };
+
+        counterToggle.onclick = function() {
+            isCounterEnabled = !isCounterEnabled;
+            counterToggle.textContent = isCounterEnabled ? "Contador: Activado" : "Contador: Desactivado";
+            counterToggle.classList.toggle('disabled', !isCounterEnabled);
+            if (!isCounterEnabled) {
                 detectionCount = 0;
                 counterDiv.textContent = `Detecciones: ${detectionCount}`;
-                isListening = true;
-                recognition.start();
-            };
+            }
+        };
 
-            stopBtn.onclick = function() {
-                isListening = false;
-                recognition.stop();
-            };
-
-            acceptBtn.onclick = function() {
+        alertToggle.onclick = function() {
+            isAlertEnabled = !isAlertEnabled;
+            alertToggle.textContent = isAlertEnabled ? "Alerta: Activada" : "Alerta: Desactivada";
+            alertToggle.classList.toggle('disabled', !isAlertEnabled);
+            if (!isAlertEnabled) {
                 alertDiv.style.display = 'none';
-            };
+            }
+        };
 
-            counterToggle.onclick = function() {
-                isCounterEnabled = !isCounterEnabled;
-                counterToggle.textContent = isCounterEnabled ? "Contador: Activado" : "Contador: Desactivado";
-                counterToggle.classList.toggle('disabled', !isCounterEnabled);
-                if (!isCounterEnabled) {
-                    detectionCount = 0;
-                    counterDiv.textContent = `Detecciones: ${detectionCount}`;
-                }
-            };
-
-            alertToggle.onclick = function() {
-                isAlertEnabled = !isAlertEnabled;
-                alertToggle.textContent = isAlertEnabled ? "Alerta: Activada" : "Alerta: Desactivada";
-                alertToggle.classList.toggle('disabled', !isAlertEnabled);
-                if (!isAlertEnabled) {
-                    alertDiv.style.display = 'none';
-                }
-            };
-        } else {
-            alert('Web Speech API no es compatible con este navegador.');
-        }
+        // Request microphone permission on page load
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function(stream) {
+                console.log('Permiso de micrófono concedido');
+                stream.getTracks().forEach(track => track.stop());
+            })
+            .catch(function(err) {
+                console.error('Error al solicitar permiso de micrófono:', err);
+                errorDiv.textContent = 'Error: No se pudo acceder al micrófono. Por favor, conceda permisos y recargue la página.';
+            });
     </script>
 </body>
 </html>
